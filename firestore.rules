@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      // Allow reading own document
+      allow read: if isOwner(userId);
+      
+      // Allow creating new user document
+      allow create: if isSignedIn() 
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['uid', 'email', 'is_admin', 'is_contributor', 'is_subscriber', 'profile'])
+        && request.resource.data.uid == userId
+        && request.resource.data.is_admin == false     // New users can't be admin by default
+        && request.resource.data.is_contributor == false  // New users can't be contributor by default
+        && request.resource.data.is_subscriber == false;  // New users can't be subscriber by default
+      
+      // Allow updating own document but prevent privilege escalation
+      allow update: if isOwner(userId)
+        && (!request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['is_admin', 'is_contributor', 'is_subscriber']));
+    }
+
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
